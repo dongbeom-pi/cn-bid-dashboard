@@ -193,6 +193,37 @@
   .cdate{font-size:12.5px; color:var(--muted); font-weight:500; font-variant-numeric:tabular-nums; white-space:nowrap}
 
   .b-new{background:var(--dblue-bg); color:var(--dblue)}
+  /* 추천점수 등급 배지 */
+  .b-sc{min-width:20px; text-align:center; cursor:help}
+  .b-sc-a{background:var(--eligible); color:#fff}
+  .b-sc-b{background:var(--dblue-bg); color:var(--dblue)}
+  .b-sc-c{background:var(--gray-bg); color:var(--gray-tx)}
+  .b-sc-d{background:var(--gray-bg); color:var(--muted-2); text-decoration:line-through}
+  /* 추천 분석 카드 (모달) */
+  .sc-head{display:flex; align-items:center; gap:12px; margin-bottom:12px}
+  .sc-grade{font-size:26px; font-weight:900; width:52px; height:52px; border-radius:14px;
+            display:flex; align-items:center; justify-content:center}
+  .sc-grade.ga{background:var(--eligible); color:#fff}
+  .sc-grade.gb{background:var(--dblue-bg); color:var(--dblue)}
+  .sc-grade.gc{background:var(--gray-bg); color:var(--gray-tx)}
+  .sc-grade.gd{background:var(--gray-bg); color:var(--muted-2)}
+  .sc-pts{font-size:13px; color:var(--muted); font-weight:600}
+  .sc-pts b{font-size:17px; color:var(--ink)}
+  .sc-list{display:grid; gap:5px}
+  .sc-line{display:flex; justify-content:space-between; gap:10px; font-size:13px; color:var(--muted);
+           border-bottom:1px dashed var(--line-soft); padding-bottom:5px}
+  .sc-line .d{font-weight:800; font-variant-numeric:tabular-nums}
+  .sc-line .d.plus{color:var(--eligible)} .sc-line .d.minus{color:var(--urgent)}
+  .sc-cmp{margin-top:14px; padding-top:12px; border-top:1px solid var(--line-soft)}
+  .sc-cmp .ck2{font-size:12px; color:var(--muted-2); font-weight:700; margin-bottom:8px}
+  .sc-cmp-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:10px}
+  .sc-cmp-grid .cell{background:var(--gray-bg); border-radius:10px; padding:9px 11px}
+  .sc-cmp-grid .k3{font-size:11px; color:var(--muted-2); font-weight:600}
+  .sc-cmp-grid .v3{font-size:15px; font-weight:800; color:var(--ink); margin-top:2px; font-variant-numeric:tabular-nums}
+  .sc-cmp-grid .v3 small{font-size:11px; color:var(--muted); font-weight:500}
+  .sc-est{margin-top:10px; padding:10px 12px; border-radius:10px; background:var(--dblue-bg); color:var(--dblue);
+          font-size:13px; font-weight:600}
+  .sc-est b{font-size:15px; font-variant-numeric:tabular-nums}
   .dday.d0{animation:dpulse 2.2s ease-in-out infinite}
   @keyframes dpulse{0%,100%{box-shadow:0 0 0 0 rgba(229,72,77,.28)} 50%{box-shadow:0 0 0 5px rgba(229,72,77,0)}}
   .sk{height:13px; border-radius:6px;
@@ -368,6 +399,7 @@
       <select class="ctl" id="catSel"><option value="">전체 분류</option></select>
       <select class="ctl" id="sortSel">
         <option value="dday">마감 임박순</option>
+        <option value="score">추천 점수순</option>
         <option value="budget">예산 높은순</option>
         <option value="notice">공고 최신순</option>
       </select>
@@ -467,6 +499,98 @@ function regionOK(r){
 }
 function numBudget(r){ const n=parseInt(String(r.price||'').replace(/[^0-9]/g,''),10); return isNaN(n)?0:n; }
 
+/* ── 추천점수 (Bid/No-Bid) ─────────────────────────────
+   가중치·등급컷·금액구간은 SCORE_CFG에서 직접 조정 가능 */
+const SCORE_CFG = {
+  w: { elig:30, noLimitLic:15, region:15, core:15, sweet:10, offSweet:3, priceComp:8, renotice:7, urgent:3, lowComp:5, highFail:3 },
+  cut: { A:70, B:50, C:30 },
+  sweetMin: 30000000, sweetMax: 500000000,   // 금액 스위트스팟: 3천만~5억
+  minSample: 3                                // 낙찰 통계 최소 표본수
+};
+const CORE_KW=['항공권','항공발권','항공 발권','국외','해외','MICE','국제회의','컨벤션','PCO','팸투어','연수'];
+
+/* 마감보관함(낙찰 로우데이터) 2차 로드 — 실패하면 조용히 통계 미적용 */
+const ARCH_GID=1954730853;
+let ARCH=[];                       // {cat,title,rate,pcnt,status}
+let STATS_CACHE=new Map();         // 분류별 통계 캐시
+let SC_CACHE=new WeakMap();        // 행별 점수 캐시 (ARCH 도착 시 무효화)
+function parseArch(resp){
+  const t=resp&&resp.table; if(!t||!t.rows) return [];
+  const out=[];
+  for(const row of t.rows){
+    const cs=row.c||[]; const g=i=>cellStr(cs[i]).trim();
+    const status=g(44); if(!status) continue;   // AS 개찰결과 없는 행은 통계 무의미
+    out.push({cat:g(5), title:g(3), rate:parseFloat(g(42)), pcnt:parseInt(g(43),10), status});
+  }
+  return out;
+}
+function loadArch(){
+  return new Promise((resolve)=>{
+    let done=false;
+    window.__cnGvizCb2=function(resp){ if(done)return; done=true; try{resolve(parseArch(resp));}catch(e){resolve([]);} };
+    const s=document.createElement('script');
+    s.src="https://docs.google.com/spreadsheets/d/"+SHEET_ID_LIVE+"/gviz/tq?gid="+ARCH_GID+"&headers=1&tqx=responseHandler:__cnGvizCb2&_t="+Date.now();
+    s.onerror=()=>{ if(!done){done=true; resolve([]);} };
+    document.head.appendChild(s);
+    setTimeout(()=>{ if(!done){done=true; resolve([]);} }, 8000);
+  });
+}
+function simStats(r){
+  const cat=String(r.category||'').trim();
+  if(!cat||!ARCH.length) return null;
+  if(STATS_CACHE.has(cat)) return STATS_CACHE.get(cat);
+  const s=ARCH.filter(a=>a.cat===cat);
+  let st=null;
+  if(s.length>=SCORE_CFG.minSample){
+    const rates=s.map(a=>a.rate).filter(v=>!isNaN(v)&&v>0).sort((x,y)=>x-y);
+    const pcs=s.map(a=>a.pcnt).filter(v=>!isNaN(v)&&v>0);
+    const fails=s.filter(a=>a.status==='유찰').length;
+    const med=a=>a.length?a[Math.floor(a.length/2)]:null;
+    const qt=(a,p)=>a.length?a[Math.min(a.length-1,Math.floor(a.length*p))]:null;
+    st={n:s.length, medRate:med(rates), q1:qt(rates,0.25), q3:qt(rates,0.75),
+        avgP:pcs.length?pcs.reduce((x,y)=>x+y,0)/pcs.length:null,
+        failPct:Math.round(fails/s.length*100)};
+  }
+  STATS_CACHE.set(cat,st);
+  return st;
+}
+function bidScore(r){
+  const W=SCORE_CFG.w, reasons=[];
+  const licV=String(r.industryLimit||'').trim(), rgnV=String(r.regionLimit||'').trim();
+  // 하드 게이트: 지역제한 명시 + 우리 권역 아님 → 참여 불가
+  if(rgnV && !NO_LIMIT.includes(rgnV) && rgnV!=='있음' && !OUR_RGN.some(k=>rgnV.includes(k))){
+    return {score:0, grade:'D', reasons:[{label:'지역 부적합 ('+rgnV+') — 참여 불가', d:0}], stats:null};
+  }
+  let sc=0;
+  if(isEligible(r)){ sc+=W.elig; reasons.push({label:'업종 적격: '+licV.replace('★','').trim(), d:W.elig}); }
+  else if(NO_LIMIT.includes(licV)){ sc+=W.noLimitLic; reasons.push({label:'업종 제한 없음', d:W.noLimitLic}); }
+  if(regionOK(r)){ sc+=W.region; reasons.push({label:NO_LIMIT.includes(rgnV)?'지역 제한 없음':'지역 적합 ('+rgnV+')', d:W.region}); }
+  const core=CORE_KW.find(k=>String(r.title||'').includes(k));
+  if(core){ sc+=W.core; reasons.push({label:'본업 키워드 「'+core+'」', d:W.core}); }
+  const n=numBudget(r)||parseInt(String(r.budgetAmt||'').replace(/[^0-9]/g,''),10)||0;
+  if(n){
+    const fmtAmt = n>=100000000 ? (Math.round(n/10000000)/10)+'억' : Math.round(n/10000).toLocaleString('ko-KR')+'만원';
+    if(n>=SCORE_CFG.sweetMin&&n<=SCORE_CFG.sweetMax){ sc+=W.sweet; reasons.push({label:'금액대 적정 ('+fmtAmt+')', d:W.sweet}); }
+    else{ sc+=W.offSweet; reasons.push({label:'금액대 범위 밖 ('+fmtAmt+')', d:W.offSweet}); }
+  }
+  const pR=parseFloat(r.priceRate);
+  if((!isNaN(pR)&&pR>=20)||String(r.awardMethod||'').includes('적격심사')){ sc+=W.priceComp; reasons.push({label:'가격경쟁형 (가격배점 높음)', d:W.priceComp}); }
+  if(isRenotice(r)||String(r.rebid||'').trim()==='Y'){ sc+=W.renotice; reasons.push({label:'재공고/재입찰 (경쟁 약함 신호)', d:W.renotice}); }
+  if(isUrgent(r)){ sc+=W.urgent; reasons.push({label:'긴급 공고', d:W.urgent}); }
+  const st=simStats(r);
+  if(st){
+    if(st.avgP!==null&&st.avgP<=2.5){ sc+=W.lowComp; reasons.push({label:'유사 공고 평균 참가 '+st.avgP.toFixed(1)+'개사 (경쟁 약)', d:W.lowComp}); }
+    if(st.failPct>=30){ sc+=W.highFail; reasons.push({label:'유사 공고 유찰율 '+st.failPct+'% (기회 요인)', d:W.highFail}); }
+  }
+  // 업종제한 있는데 비적격 → 등급 상한 C
+  let capped=false;
+  if(licV && !NO_LIMIT.includes(licV) && licV!=='있음' && !isEligible(r) && sc>=SCORE_CFG.cut.B){ sc=SCORE_CFG.cut.B-1; capped=true; }
+  const grade = sc>=SCORE_CFG.cut.A?'A': sc>=SCORE_CFG.cut.B?'B': sc>=SCORE_CFG.cut.C?'C':'D';
+  if(capped) reasons.push({label:'업종제한 비적격 → C 상한 적용', d:0});
+  return {score:sc, grade, reasons, stats:st};
+}
+function scoreOf(r){ let v=SC_CACHE.get(r); if(!v){ v=bidScore(r); SC_CACHE.set(r,v); } return v; }
+
 /* ── 렌더 ── */
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function ddayCell(r){
@@ -510,6 +634,7 @@ function applyFilters(list){
   d.sort((a,b)=>{
     if(dir==='budget') return numBudget(b)-numBudget(a);
     if(dir==='notice') return String(b.noticeDate||'').localeCompare(String(a.noticeDate||''));
+    if(dir==='score') return scoreOf(b).score-scoreOf(a).score;
     // dday: 유효 오름차순, 미정/마감 뒤로
     const da=ddayVal(a), db=ddayVal(b);
     const va=(da===null||da<0)?99999:da, vb=(db===null||db<0)?99999:db;
@@ -538,7 +663,10 @@ function render(){
   let html='';
   for(const r of list){
     const k=keyOf(r), fav=FAVS.has(k), urg=isUrgent(r), re=isRenotice(r), el=isEligible(r);
-    const badges = (isNew(r)?'<span class="badge b-new">NEW</span>':'')
+    const sc=scoreOf(r);
+    const scTip='추천 '+sc.score+'점 · '+sc.reasons.slice(0,3).map(x=>x.label).join(' / ');
+    const badges = '<span class="badge b-sc b-sc-'+sc.grade.toLowerCase()+'" title="'+esc(scTip)+'">'+sc.grade+'</span>'
+                 + (isNew(r)?'<span class="badge b-new">NEW</span>':'')
                  + (urg?'<span class="badge b-urg">긴급</span>':'')
                  + (el?'<span class="badge b-elig">적격</span>':'')
                  + (re?'<span class="badge b-re">재공고</span>':'');
@@ -786,6 +914,36 @@ function openModal(k){
       +'</div>';
   }
 
+  // 추천 분석 카드 (점수 + 근거 + 유사 공고 낙찰 비교)
+  const sc=scoreOf(r), sst=sc.stats;
+  let cmp='';
+  if(sst){
+    const cell=(k2,v2)=>'<div class="cell"><div class="k3">'+k2+'</div><div class="v3">'+v2+'</div></div>';
+    const cells=[cell('유사 공고 표본', sst.n+'<small>건</small>')];
+    if(sst.medRate) cells.push(cell('낙찰률 중앙값', sst.medRate.toFixed(2)+'<small>%</small>'));
+    if(sst.avgP!==null) cells.push(cell('평균 참가업체', sst.avgP.toFixed(1)+'<small>개사</small>'));
+    cells.push(cell('유찰율', sst.failPct+'<small>%</small>'));
+    // 예상 투찰가 = 기초금액(없으면 추정가격) × 유사 공고 낙찰률
+    const baseN=parseInt(String(r.baseAmt||'').replace(/[^0-9]/g,''),10)||numBudget(r);
+    let est='';
+    if(baseN&&sst.medRate){
+      const mid=Math.round(baseN*sst.medRate/100);
+      const lo=sst.q1?Math.round(baseN*sst.q1/100):null, hi=sst.q3?Math.round(baseN*sst.q3/100):null;
+      est='<div class="sc-est">예상 투찰가 <b>'+mid.toLocaleString('ko-KR')+'원</b>'
+        +(lo&&hi&&lo!==hi?' <span style="opacity:.75">(범위 '+lo.toLocaleString('ko-KR')+' ~ '+hi.toLocaleString('ko-KR')+'원)</span>':'')
+        +' <span style="opacity:.65">· '+(String(r.baseAmt||'').trim()?'기초금액':'추정가격')+' × 유사 낙찰률 기준</span></div>';
+    }
+    cmp='<div class="sc-cmp"><div class="ck2">유사 공고 낙찰 비교 (동일 분류)</div>'
+      +'<div class="sc-cmp-grid">'+cells.join('')+'</div>'+est+'</div>';
+  }
+  const gradeMsg={A:'적극 검토 권장',B:'검토 권장',C:'조건 확인 필요',D:'참여 비권장'}[sc.grade];
+  const scCard='<div class="m-card wide"><div class="m-ct">'+ic(IC.shield)+'입찰 추천 분석</div>'
+    +'<div class="sc-head"><div class="sc-grade g'+sc.grade.toLowerCase()+'">'+sc.grade+'</div>'
+    +'<div class="sc-pts"><b>'+sc.score+'</b> / 100점 · '+gradeMsg+'</div></div>'
+    +'<div class="sc-list">'+sc.reasons.map(x=>'<div class="sc-line"><span>'+esc(x.label)+'</span>'
+      +'<span class="d '+(x.d>0?'plus':(x.d<0?'minus':''))+'">'+(x.d>0?'+'+x.d:(x.d===0?'—':x.d))+'</span></div>').join('')+'</div>'
+    +cmp+'</div>';
+
   // 첨부파일
   const fRaw=V(r.files);
   let filesCard='';
@@ -811,6 +969,7 @@ function openModal(k){
     +((budgetAmt||V(r.baseAmt))?'':'<div class="m-note">기초금액 등 세부는 나라장터 원문에서 확인할 수 있어요.</div>')+'</div>'
     +'<div class="m-card wide"><div class="m-ct">'+ic(IC.org||IC.info)+'공고기관 · 수요기관</div>'+ag+'</div>'
     +'<div class="m-card wide"><div class="m-ct">'+ic(IC.doc)+'입찰 조건</div>'+cond+ratioHtml+'</div>'
+    +scCard
     +filesCard
     +'</div>'
     +'<div class="m-foot">'
@@ -847,6 +1006,8 @@ async function boot(){
   try{ const rows=await loadJSONP(); if(rows&&rows.length){ ALL=rows; LIVE=true; } else { ALL=EMBEDDED; } }
   catch(e){ ALL=EMBEDDED; }
   setStatus(); fillSelects(); render();
+  // 낙찰 로우데이터는 비동기 2차 로드 — 도착하면 점수 캐시 비우고 재렌더
+  loadArch().then(rows=>{ ARCH=rows||[]; if(ARCH.length){ STATS_CACHE=new Map(); SC_CACHE=new WeakMap(); render(); } });
 }
 boot();
 </script>
