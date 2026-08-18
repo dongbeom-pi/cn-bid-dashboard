@@ -255,15 +255,17 @@
   .agency .cv{font-size:13.5px; color:var(--ink); font-weight:600; word-break:break-all}
   .agency .cv.dim{color:var(--muted-2); font-weight:500}
   .ratio{display:flex; height:30px; border-radius:9px; overflow:hidden; margin-top:4px}
-  .ratio>div{display:flex; align-items:center; justify-content:center; gap:4px;
-             font-size:12px; font-weight:800; letter-spacing:-.01em; min-width:52px}
+  .ratio>div{display:flex; align-items:center; justify-content:center;
+             font-size:12px; font-weight:800; letter-spacing:-.01em; min-width:0; overflow:hidden}
+  .ratio-cap{margin-top:6px; font-size:12px; font-weight:600; color:var(--muted)}
   .r-tech{background:var(--dblue-bg); color:var(--dblue)}
   .r-price{background:var(--eligible-bg); color:var(--eligible)}
   .file{display:flex; align-items:center; gap:11px; padding:10px 2px;
         border-bottom:1px solid var(--line-soft); text-decoration:none}
   .file:last-child{border-bottom:0}
   .file svg{color:var(--muted-2); flex-shrink:0}
-  .file .fn{flex:1; font-size:13.5px; font-weight:600; color:var(--ink);
+  .file{min-width:0}
+  .file .fn{flex:1; min-width:0; font-size:13.5px; font-weight:600; color:var(--ink);
             overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .file .go{font-size:12px; font-weight:700; color:var(--blue-ink); flex-shrink:0}
   .file:hover .fn{color:var(--blue-ink)}
@@ -753,12 +755,13 @@ function openModal(k){
   // 평가비율 바 (협상계약 등 — 값 있을 때만)
   const tR=parseFloat(r.techRate), pR=parseFloat(r.priceRate);
   let ratioHtml='';
-  if(!isNaN(tR)&&!isNaN(pR)&&(tR+pR)>0){
+  const tV=isNaN(tR)?0:tR, pV=isNaN(pR)?0:pR;
+  if(tV+pV>0){
+    const tot=tV+pV, tp=Math.round(tV/tot*100), pp=100-tp;
+    const seg=(pct,cls,label)=>'<div class="'+cls+'" style="width:'+pct+'%">'+(pct>=16?label:'')+'</div>';
     ratioHtml='<div style="margin-top:16px"><div class="ck" style="font-size:12px;color:var(--muted-2);font-weight:700;margin-bottom:7px">평가비율</div>'
-      +'<div class="ratio">'
-      +'<div class="r-tech" style="flex:'+tR+'">기술 '+tR+'</div>'
-      +'<div class="r-price" style="flex:'+pR+'">가격 '+pR+'</div>'
-      +'</div></div>';
+      +'<div class="ratio">'+seg(tp,'r-tech','기술 '+tV)+seg(pp,'r-price','가격 '+pV)+'</div>'
+      +'<div class="ratio-cap">기술 '+tV+' : 가격 '+pV+'</div></div>';
   }
 
   // 첨부파일
