@@ -269,9 +269,9 @@
             overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .file .go{font-size:12px; font-weight:700; color:var(--blue-ink); flex-shrink:0}
   .file:hover .fn{color:var(--blue-ink)}
-  .m-foot{padding:0 22px 22px; display:flex; gap:10px}
-  .btn{flex:1; height:46px; border-radius:12px; border:0; cursor:pointer;
-       font-family:inherit; font-size:14.5px; font-weight:700; display:flex;
+  .m-foot{padding:6px 22px 26px; display:flex; gap:12px}
+  .btn{flex:1; height:52px; border-radius:13px; border:0; cursor:pointer;
+       font-family:inherit; font-size:15.5px; font-weight:700; display:flex;
        align-items:center; justify-content:center; gap:8px; transition:.15s}
   .btn.pri{background:var(--navy); color:#fff}
   .btn.pri:hover{background:#1D3F78}
@@ -282,7 +282,8 @@
     .ov{padding:0}
     .modal{border-radius:0; min-height:100%}
     .m-body{grid-template-columns:1fr}
-    .m-foot{flex-direction:column}
+    .m-foot{flex-direction:column; gap:10px; padding:8px 16px 28px}
+    .m-foot .btn{height:56px; font-size:16px}
   }
 
   @media (max-width:900px){
@@ -469,9 +470,15 @@ function budgetCell(r){
 }
 
 const EXCL_CATS=['매체제작','시설물관리','임대*위탁'];
+const JUNK_KW=['구매','구입','조달','크로마토','분석기','시뮬레이','교복','백신','시약','장비','기자재','메달','건조기','시제품','정산','발간','도록','컨설팅','연구','조사','인증','타당성','철거','해체','수거','경호','법률','법인 설립','무대공연','특설무대','콘텐츠 개발','콘텐츠 제작'];
+function titleOK(r){
+  const n=String(r.title||'');
+  if(n.includes('항공권')||n.includes('항공발권')) return true;
+  return !JUNK_KW.some(k=>n.includes(k));
+}
 function catOK(r){ return !EXCL_CATS.some(c=>String(r.category||'').includes(c)); }
 function baseData(){
-  let d = ALL.filter(r=>!EXCL.has(keyOf(r)) && catOK(r));
+  let d = ALL.filter(r=>!EXCL.has(keyOf(r)) && catOK(r) && titleOK(r));
   if(ST.tab==='fav')  return ALL.filter(r=>FAVS.has(keyOf(r)));
   if(ST.tab==='excl') return ALL.filter(r=>EXCL.has(keyOf(r)));
   if(ST.tab==='due')  d = d.filter(r=>!isUndated(r) && (ddayVal(r)===null||ddayVal(r)>=0));
@@ -545,7 +552,7 @@ function render(){
 }
 
 function updateTabsAndStats(){
-  const avail = ALL.filter(r=>!EXCL.has(keyOf(r)) && catOK(r));
+  const avail = ALL.filter(r=>!EXCL.has(keyOf(r)) && catOK(r) && titleOK(r));
   const due = avail.filter(r=>!isUndated(r) && (ddayVal(r)===null||ddayVal(r)>=0));
   const tbd = avail.filter(isUndated);
   const cnt={ due:due.length, tbd:tbd.length, all:avail.length, fav:FAVS.size, excl:EXCL.size };
@@ -760,8 +767,8 @@ function openModal(k){
     const tot=tV+pV, tp=Math.round(tV/tot*100), pp=100-tp;
     const seg=(pct,cls,label)=>'<div class="'+cls+'" style="width:'+pct+'%">'+(pct>=16?label:'')+'</div>';
     ratioHtml='<div style="margin-top:16px"><div class="ck" style="font-size:12px;color:var(--muted-2);font-weight:700;margin-bottom:7px">평가비율</div>'
-      +'<div class="ratio">'+seg(tp,'r-tech','기술 '+tV)+seg(pp,'r-price','가격 '+pV)+'</div>'
-      +'<div class="ratio-cap">기술 '+tV+' : 가격 '+pV+'</div></div>';
+      +'<div class="ratio">'+seg(tp,'r-tech','기술 '+tV+'%')+seg(pp,'r-price','가격 '+pV+'%')+'</div>'
+      +'</div>';
   }
 
   // 첨부파일
